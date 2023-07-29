@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # node18:
+  #   build:
+  #     context: .docker
+  #     dockerfile: node18.Dockerfile
+  #   image: local/node18
+
+  nginx:
+    # build:
+      # context: .docker/nginx
+      # dockerfile: nginx.conf
+    image: nginx:stable-alpine
+    container_name: E-Box_nginx
+    restart: unless-stopped
+    tty: true
+    ports:
+     - "8080:80"
+    #  - "8143:443"
+    links:
+     - php
+    volumes:
+      - "./www/ebox-backend:/var/www/html"
+      - ./docker-files/nginx/app.conf/:/etc/nginx/conf.d/default.conf:rw
+      - ./docker-files/logs/nginx:/var/logs/nginx:rw  
+    depends_on:
+     - php
+     - database 
+    networks:
+     - app-network
+
+  # php Service
+  php: 
+    build:
+      context: ./www/ebox-backend
+      dockerfile: Dockerfile
+      args:
+        - APP_ENV=${APP_ENV}
+    environment:
+      - APP_ENV=${APP_ENV}
+      - CONTAINER_ROLE=app
+    working_dir: /var/www
+    container_name: E-Box_php
+    ports:
+     - "9001:9000"
+    depends_on:
+      - database
+      - redis 
+    volumes:
+     - "./www/ebox-backend:/var/www/html"
+     - "./docker-files/php/local.ini:/usr/local/etc/php/conf.d/local.ini"
+    networks:
+      - app-network
+
+  # Database Server
+  database:
+    image: mysql:8   
+    container_name: E-Box_mysqldb
+    restart: unless-stopped
+    tty: true
+    # command: --default-authentication-plugin=mysql_native_password
+    environment:
+      - MYSQL_DATABASE= ${DB_DATABASE}
+      - MYSQL_USER= ${DB_USERNAME}
+      - MYSQL_PASSWORD= ${DB_PASSWORD} 
+      - MYSQL_ROOT_PASSWORD= ${DB_PASSWORD}
+      # SERVICE_TAG: dev
+      # SERVICE_NAME: mysql
+    ports:
+      - '3306:3306'
+    volumes:
+      # - '.docker/init.sql:/docker-entrypoint-initdb.d/setup.sql'
+      - './mysql:/var/lib/mysql'
+    networks:
+      - app-network
+
+  # Redis Server
+  redis:
+    image: redis:6.2-alpine
+    container_name: E-Box_redis
+    restart: always
+    ports:
+      - '6379:6379'
+    command: redis-server --save 20 1 --loglevel warning --requirepass "${REDIS_PASSWORD}"
+    volumes: 
+      - redis_mem:/data
+    networks:
+      - app-network
+
+volumes:
+  mysql: ~
+  redis_mem:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge
